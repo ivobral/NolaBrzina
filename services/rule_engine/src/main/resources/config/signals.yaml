@@ -1,0 +1,5 @@
+com.mindsmiths.telegramAdapter.events.TelegramReceivedMessage:
+  - !GetOrCreateAgentByConnection
+    connectionName: telegram
+    connectionField: chatId
+    agentType: agents.Nola

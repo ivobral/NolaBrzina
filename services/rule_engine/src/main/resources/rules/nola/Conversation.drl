@@ -1,0 +1,94 @@
+package rules.nola;
+
+import com.mindsmiths.telegramAdapter.events.TelegramReceivedMessage
+import com.mindsmiths.gpt3.completion.GPT3Completion
+import com.mindsmiths.ruleEngine.model.Initialize
+import models.signals.AgentCreated
+import com.mindsmiths.ruleEngine.model.Heartbeat;
+import agents.Nola
+import java.time.LocalDateTime;
+
+rule "First contact"
+    when
+        initialize: Initialize() from entry-point "signals"
+        agent: Nola()
+    then
+        agent.sendMessage("Okay, turning my engines on. Let's start!");
+        agent.send("SMITH", new AgentCreated(agent));
+        delete(initialize);
+end
+
+rule "Handle message"
+    when
+        message: TelegramReceivedMessage() from entry-point "signals"
+        agent: Nola()
+    then
+        modify(agent) {
+            addMessageToMemory(agent.getPersonality().getHumanName(), message.getText()),
+            setPinged(false),
+            setLastInteractionTime(LocalDateTime.now())
+        };
+        agent.askGPT3();
+        delete(message);
+end
+
+rule "Switch personality"
+    salience 100
+    when
+        message: TelegramReceivedMessage(text.equalsIgnoreCase("switch")) from entry-point "signals"
+        agent: Nola()
+    then
+        modify(agent) {changePersonality()};
+        agent.sendMessage("Switched personality! " + agent.getPersonality().getUserPrompt());
+        delete(message);
+end
+
+rule "Send GPT3 response"
+    when
+        gpt3Result: GPT3Completion() from entry-point "signals"
+        agent: Nola()
+    then
+        String response = gpt3Result.getBestResponse();
+        agent.sendMessage(response);
+        modify(agent) {addMessageToMemory(agent.getPersonality().getAiName(), response)};
+        delete(gpt3Result);
+end
+
+rule "Reset conversation"
+    salience 100
+    when
+        message: TelegramReceivedMessage(text.equalsIgnoreCase("reset")) from entry-point "signals"
+        agent: Nola()
+    then
+        modify(agent) {resetMemory()};
+        agent.sendMessage("I'll pretend this never happened 🤫");
+        delete(message);
+end
+
+rule "Expire conversation"
+    when
+        Heartbeat(ts: timestamp) from entry-point "signals"
+        agent: Nola(
+            memory.isEmpty() == false,
+            lastInteractionTime before[2m] ts
+        )
+    then
+        modify(agent) {resetMemory()};
+        agent.sendMessage("Talk to you some other time!");
+end
+
+rule "Re-engage user"
+    when
+        Heartbeat(ts: timestamp) from entry-point "signals"
+        agent: Nola(
+            memory.isEmpty() == false,
+            lastInteractionTime before[1m] ts,
+            pinged == false
+        )
+    then
+        modify(agent) {
+            addInstruction("Continue conversation with human because they are inactive."),
+            setPinged(true)
+        };
+        agent.askGPT3();
+end

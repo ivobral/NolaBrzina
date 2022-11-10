@@ -1,0 +1,16 @@
+enabled: true
+fullnameOverride: postgresql
+auth:
+  postgresPassword: '{{ env.POSTGRES_CLIENT_PASSWORD }}'
+resources:
+  requests:
+    cpu: 14m
+    memory: 36Mi
+primary:
+  nodeSelector:
+    project: {{ env.CI_PROJECT_NAME }}-{{ env.CI_COMMIT_REF_SLUG }}
+  tolerations:
+    - key: "project"
+      operator: "Equal"
+      value: '{{ env.CI_PROJECT_NAME }}-{{ env.CI_COMMIT_REF_SLUG }}'
+      effect: "NoSchedule"
